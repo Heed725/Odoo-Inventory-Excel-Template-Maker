@@ -7,8 +7,8 @@ A static web app that converts a product spreadsheet into an **Odoo 19 product i
 ## Use
 
 1. Upload `.xlsx`, `.xls`, `.csv`, `.tsv`, or `.ods` (up to 20 MB, 50,000 data rows, 250 columns).
-2. Select the worksheet and header row.
-3. Review automatic column matches. Skip unused columns and set optional company, product category, unit, product type, and POS defaults.
+2. Select the worksheet. The app detects common header rows automatically; adjust the header row if needed.
+3. Review automatic column matches. It recognizes Odoo field names, common English and Swahili headings, compact headings such as `ProductName`, currency labels such as `Selling Price (TZS)`, and close spelling variations. Spelling-based suggestions are marked for review. Unclear headings remain skipped. **Auto-map columns** reapplies the automatic matches to every column, replacing manual selections. Skip unused columns and set optional company, product category, unit, product type, and POS defaults.
 4. Review validation and the output preview.
 5. Download `.xlsx` or `.csv`, optionally split into 100, 200, 500, or 1,000 product batches in a ZIP.
 6. In Odoo, open **Inventory → Products → Products → Import records**. Review the field matches, click **Test**, then **Import**.

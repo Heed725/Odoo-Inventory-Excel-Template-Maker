@@ -2,6 +2,24 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const C=require('../core.js');
 const XLSX=require('../vendor/xlsx.full.min.js');
+test('recognizes compact headings, currency labels and Swahili headings',()=>{
+ for(const [heading,key] of [['ProductName','name'],['Stock Code','default_code'],['Selling Price (TZS)','list_price'],['Purchase Price TSh','standard_price'],['POS Product Categories','pos_categ_ids'],['Jina la bidhaa','name'],['Bei ya kuuza','list_price'],['Kipimo','uom_id'],['DEFAULT_CODE','default_code']])assert.equal(C.match(heading),key,heading);
+});
+test('suggests close spelling variations but does not guess unrelated headings',()=>{
+ assert.equal(C.suggest('Selling Prce').key,'list_price');assert.ok(C.suggest('Selling Prce').score<.95);
+ assert.equal(C.match('Product Nmae'),'name');
+ for(const heading of ['On hand quantity','Stock Value','Supplier ID','ID','Tax Amount','Opening Balance','Product Image'])assert.equal(C.match(heading),'',heading);
+});
+test('automatic matching reserves fields for the strongest column',()=>{
+ const a=C.autoMap(['Selling Prce','list_price','SKU','Internal Reference','name']);
+ assert.deepEqual(a.map(s=>s.key),['','list_price','default_code','','name']);
+ assert.ok(a[0].reason.includes('already matches'));
+});
+test('detects headings after title rows and keeps the first equally strong row',()=>{
+ assert.equal(C.detectHeaderRow([['Supplier list'],[],['ProductName','Stock Code','Selling Price TZS'],['Water','001','1000']]),3);
+ assert.equal(C.detectHeaderRow([['name','barcode'],['Product Name','Barcode']]),1);
+ assert.equal(C.detectHeaderRow([['Unrecognized'],['Other']]),1);
+});
 test('auto maps technical names, labels and common source aliases',()=>{
  for(const [header,key] of [['Product Name','name'],['SKU','default_code'],['Selling Price','list_price'],['Barcode','barcode'],['categ_id/id','categ_id/id'],['Point of Sale Categories','pos_categ_ids']])assert.equal(C.match(header),key);
  assert.equal(C.match('On hand quantity'),'');

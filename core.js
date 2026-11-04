@@ -1,20 +1,20 @@
 (function(root){
 'use strict';
 const fields = [
- ['name','Name',['product','product name','item','item name','description','jina']],
- ['default_code','Internal Reference',['sku','code','item code','product code','reference','internal reference']],
- ['barcode','Barcode',['ean','ean13','upc','bar code']],
- ['list_price','Sales Price',['price','selling price','sale price','sales price','retail price']],
- ['standard_price','Cost',['buying price','purchase price','unit cost','cost price']],
- ['categ_id','Product Category',['category','product category','category name']],
- ['uom_id','Unit of Measure',['uom','unit','units','unit of measure','sales uom']],
+ ['name','Name',['product','product name','item','item name','description','jina','product description','item description','jina la bidhaa','bidhaa']],
+ ['default_code','Internal Reference',['sku','code','item code','product code','reference','internal reference','item number','product number','stock code','part number','item no','product no','namba ya bidhaa']],
+ ['barcode','Barcode',['ean','ean13','upc','bar code','ean code','barcode number']],
+ ['list_price','Sales Price',['price','selling price','sale price','sales price','retail price','unit price','sell price','rrp','bei ya kuuza']],
+ ['standard_price','Cost',['buying price','purchase price','unit cost','cost price','buy price','purchase cost','bei ya kununua']],
+ ['categ_id','Product Category',['category','product category','category name','product group','item category','kundi la bidhaa']],
+ ['uom_id','Unit of Measure',['uom','unit','units','unit of measure','sales uom','unit of measurement','kipimo']],
  ['uom_ids','Packagings',['packaging','packagings']],
  ['type','Product Type',['type','product type']],
  ['is_storable','Track Inventory',['track inventory','stockable','storable']],
  ['sale_ok','Sales',['can be sold','sale ok','sellable']],
  ['purchase_ok','Purchase',['can be purchased','purchase ok']],
  ['available_in_pos','Available in POS',['pos','available in pos','point of sale']],
- ['pos_categ_ids','Point of Sale Categories',['pos category','pos categories','point of sale category','point of sale categories']],
+ ['pos_categ_ids','Point of Sale Categories',['pos category','pos categories','point of sale category','point of sale categories','pos product category','pos product categories']],
  ['company_id','Company',['company','company name']],
  ['id','External ID',['external id','xml id','xmlid']],
  ['description_sale','Sales Description',['sales description','sale description']],
@@ -26,8 +26,42 @@ const fields = [
 ].map(([key,label,aliases])=>({key,label,aliases}));
 const numbers=new Set(['list_price','standard_price','weight','volume']);
 const booleans=new Set(['is_storable','sale_ok','purchase_ok','available_in_pos']);
-const normalize=s=>String(s??'').toLowerCase().replace(/[_/()-]+/g,' ').replace(/\s+/g,' ').trim();
-function match(header){const exact=fields.find(f=>f.key===String(header).trim());if(exact)return exact.key; const s=normalize(header);return fields.find(f=>[f.label,...f.aliases].some(a=>normalize(a)===s))?.key||'';}
+const normalize=s=>String(s??'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+const compact=s=>normalize(s).replace(/\s/g,'');
+function distance(a,b){if(a.length===b.length){const ix=[];for(let i=0;i<a.length;i++)if(a[i]!==b[i])ix.push(i);if(ix.length===2&&ix[1]===ix[0]+1&&a[ix[0]]===b[ix[1]]&&a[ix[1]]===b[ix[0]])return 1;}const d=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let last=d[0];d[0]=i;for(let j=1;j<=b.length;j++){const old=d[j];d[j]=Math.min(d[j]+1,d[j-1]+1,last+(a[i-1]===b[j-1]?0:1));last=old;}}return d[b.length];}
+function suggest(header){
+ const raw=String(header??'').trim(),exact=fields.find(f=>f.key===raw);
+ if(exact)return {key:exact.key,score:1,reason:'Odoo field name'};
+ const input=normalize(raw),s=compact(input);
+ if(!s)return {key:'',score:0,reason:'Empty heading'};
+ const candidates=fields.map(f=>{
+  const names=[f.label,...f.aliases,...(f.key==='id'?[]:[f.key])];
+  let score=0,reason='';
+  for(const name of names){const target=compact(name);let value=0,why='';
+   if(s===target){value=.98;why='Recognized column name';}
+   else if(['list_price','standard_price'].includes(f.key)&&compact(input.replace(/\b(?:tzs|tsh|tshs|usd|eur|gbp|kes|ksh|ugx|rwf)\b/g,''))===target){value=.96;why='Price heading with currency';}
+   else if(Math.min(s.length,target.length)>=7&&Math.max(s.length,target.length)<=60){const edits=distance(s,target);if(edits<=2){const similarity=1-edits/Math.max(s.length,target.length);if(similarity>=.85){value=similarity*.95;why='Possible spelling variation';}}}
+   if(value>score){score=value;reason=why;}
+  }return {key:f.key,score,reason};
+ }).sort((a,b)=>b.score-a.score);
+ const best=candidates[0],next=candidates[1];
+ if(best.score<.8||best.score-next.score<.07)return {key:'',score:0,reason:'No clear match. Choose a field or leave skipped.'};
+ return best;
+}
+function match(header){return suggest(header).key;}
+function autoMap(headers){
+ const results=headers.map(suggest),used=new Set();
+ // Strong matches take priority even when an approximate heading appears first.
+ [...results.keys()].sort((a,b)=>results[b].score-results[a].score).forEach(i=>{
+  const s=results[i];if(!s.key)return;if(used.has(s.key))results[i]={key:'',score:0,reason:'Another column already matches this Odoo field.'};else used.add(s.key);
+ });return results;
+}
+function detectHeaderRow(matrix){
+ let row=1,best=0;matrix.slice(0,100).forEach((cells,i)=>{
+  const count=autoMap(cells).filter(s=>s.key&&s.score>=.95).length;
+  if(count>best){best=count;row=i+1;}
+ });return row;
+}
 const text=v=>String(v??'').trim();
 function numeric(v){if(typeof v==='number')return Number.isFinite(v)?v:NaN;const s=text(v);if(!/^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(s))return NaN;return Number(s.replace(/,/g,''));}
 function convert(rows, mappings, options={}){
@@ -69,5 +103,5 @@ function convert(rows, mappings, options={}){
  const activeKeys=keys.filter(k=>out.some(r=>text(r[k])));
  return {keys:activeKeys,rows:out.map(r=>activeKeys.map(k=>r[k]??'')),errors,warnings};
 }
-const api={fields,match,convert,numeric};if(typeof module!=='undefined')module.exports=api;else root.InventoryCore=api;
+const api={fields,match,suggest,autoMap,detectHeaderRow,convert,numeric};if(typeof module!=='undefined')module.exports=api;else root.InventoryCore=api;
 })(typeof window!=='undefined'?window:globalThis);
